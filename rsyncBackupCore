@@ -55,7 +55,7 @@ function FUNC_LOG() {
     $CMD_ECHO "[$TIME] $*" >> "$FILE_LOG"
 }
 
-# FUNC_ISROOT
+FUNC_ISROOT
 TIME=$($CMD_DATE "+%Y-%m-%d %H:%M")
 $CMD_ECHO "=================== backup files @ $TIME ===================" >> "$FILE_LOG"
 ARGS=$(getopt -o hf: --long help,files-from:,prefix: -n "$0" -- "$@")
