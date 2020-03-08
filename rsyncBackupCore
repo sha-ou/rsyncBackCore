@@ -1,0 +1,126 @@
+#!/bin/bash
+###################################
+# 参考：http://www.mikerubel.org/computers/rsync_snapshots/contributed/peter_schneider-kamp
+# 增加--link-dest选项实现快照型增量备份
+###################################
+
+# System commands
+CMD_ID='/usr/bin/id'
+CMD_ECHO='/usr/bin/echo'
+CMD_MV='/usr/bin/mv'
+CMD_RSYNC='/usr/bin/rsync'
+CMD_RM='/usr/bin/rm'
+CMD_MKDIR='/usr/bin/mkdir'
+CMD_DATE='/usr/bin/date'
+
+# Backup file and env
+OPTV_FILES_FROM=''
+OPTV_PREFIX='backup'
+DIR_SRC=''
+DIR_BACKUPROOT=''
+NUM_BACKUPMAX=6
+DIR_SCRIPT=$(cd $(dirname $0); pwd)
+FILE_LOG=${DIR_SCRIPT}/backup.log
+
+function FUNC_ISROOT() {
+    if [ $($CMD_ID -u) -ne 0  ]; then
+        $CMD_ECHO "Sorry, this script must be run as root."
+        exit 1
+    fi
+}
+
+function FUNC_HELP() {
+    $CMD_ECHO "Usage: bash $0 [-f | --files-from <listfile>] [--prefix <prefix>] srcfile dstfile"
+    $CMD_ECHO "Usage: bash $0 --help or -h, show this msg and exit"
+}
+
+function FUNC_CHECKARG() {
+    if test -n "$OPTV_FILES_FROM" -a ! -f "$OPTV_FILES_FROM"; then
+        $CMD_ECHO "Cannot find list-file: $OPTV_FILES_FROM"
+        exit 2
+    fi
+
+    if test ! -e "$DIR_SRC"; then
+        $CMD_ECHO "Cannot find source file: $DIR_SRC"
+        exit 3
+    fi
+
+    if test ! -e "$DIR_BACKUPROOT"; then
+        $CMD_MKDIR -p "$DIR_BACKUPROOT"
+    fi
+}
+
+function FUNC_LOG() {
+    TIME=$($CMD_DATE "+%Y-%m-%d %H:%M")
+    $CMD_ECHO "[$TIME] $*" >> "$FILE_LOG"
+}
+
+# FUNC_ISROOT
+TIME=$($CMD_DATE "+%Y-%m-%d %H:%M")
+$CMD_ECHO "=================== backup files @ $TIME ===================" >> "$FILE_LOG"
+ARGS=$(getopt -o hf: --long help,files-from:,prefix: -n "$0" -- "$@")
+eval set -- "${ARGS}"
+echo $ARGS
+
+# Get opt and args
+while true
+do
+    case "$1" in
+        -f| --files-from)
+            OPTV_FILES_FROM="$2" && shift 2 ;;
+        --prefix)
+            OPTV_PREFIX="$2" && shift 2 ;;
+        --)
+            shift && break ;;
+        -h| --help)
+            FUNC_HELP && exit 0 ;;
+        *)
+            ${CMD_ECHO} "Internal error!" && exit 1 ;;
+    esac
+done
+DIR_SRC="$1"
+DIR_BACKUPROOT="$2"
+
+FUNC_CHECKARG
+# Delte oldest backup
+NUM_VAR=$NUM_BACKUPMAX
+if [ -e "${DIR_BACKUPROOT}/${OPTV_PREFIX}.${NUM_VAR}"  ]; then
+    FUNC_LOG Deleting "${DIR_BACKUPROOT}/${OPTV_PREFIX}.${NUM_VAR}"
+    $CMD_RM -rf "${DIR_BACKUPROOT}/${OPTV_PREFIX}.${NUM_VAR}"
+    FUNC_LOG Deleted "${DIR_BACKUPROOT}/${OPTV_PREFIX}.${NUM_VAR}"
+fi
+# Move backup
+NUM_VAR=$(($NUM_VAR-1))
+while [[ $NUM_VAR -ge 0  ]]
+do
+    if [ -e "${DIR_BACKUPROOT}/${OPTV_PREFIX}.${NUM_VAR}"  ]; then
+        FUNC_LOG Moving "${DIR_BACKUPROOT}/${OPTV_PREFIX}.${NUM_VAR}" \
+            to "${DIR_BACKUPROOT}/${OPTV_PREFIX}".$(($NUM_VAR+1))
+        $CMD_MV -f "${DIR_BACKUPROOT}/${OPTV_PREFIX}.${NUM_VAR}" \
+            "${DIR_BACKUPROOT}/${OPTV_PREFIX}."$(($NUM_VAR+1))
+    fi
+    NUM_VAR=$(($NUM_VAR-1))
+done
+
+# New backup
+FUNC_LOG START Backup
+if [ -e "${DIR_BACKUPROOT}/${OPTV_PREFIX}.1" ]; then
+    if test -n "$OPTV_FILES_FROM"; then
+        $CMD_RSYNC -aH -v -r --delete --link-dest="../${OPTV_PREFIX}.1" \
+            --files-from="$OPTV_FILES_FROM" \
+            "$DIR_SRC" "${DIR_BACKUPROOT}/${OPTV_PREFIX}.0" >> "$FILE_LOG"
+    else
+        $CMD_RSYNC -aH -v -r --delete --link-dest="../${OPTV_PREFIX}.1" \
+            "$DIR_SRC" "${DIR_BACKUPROOT}/${OPTV_PREFIX}.0" >> "$FILE_LOG"
+    fi
+else
+    if test -n "$OPTV_FILES_FROM"; then
+        $CMD_RSYNC -aH -v -r --delete \
+            --files-from="$OPTV_FILES_FROM" \
+            "$DIR_SRC" "${DIR_BACKUPROOT}/${OPTV_PREFIX}.0" >> "$FILE_LOG"
+    else
+        $CMD_RSYNC -aH -v -r --delete \
+            "$DIR_SRC" "${DIR_BACKUPROOT}/${OPTV_PREFIX}.0" >> "$FILE_LOG"
+    fi
+fi
+FUNC_LOG STOP Backup
