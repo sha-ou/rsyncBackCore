@@ -60,7 +60,6 @@ TIME=$($CMD_DATE "+%Y-%m-%d %H:%M")
 $CMD_ECHO "=================== backup files @ $TIME ===================" >> "$FILE_LOG"
 ARGS=$(getopt -o hf: --long help,files-from:,prefix: -n "$0" -- "$@")
 eval set -- "${ARGS}"
-echo $ARGS
 
 # Get opt and args
 while true
